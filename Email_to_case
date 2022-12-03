@@ -1,0 +1,86 @@
+global class Email_to_case implements Messaging.InboundEmailHandler {
+    global Messaging.InboundEmailResult handleInboundEmail(Messaging.InboundEmail email,  Messaging.InboundEnvelope envelope){
+        Messaging.InboundEmailResult result = new Messaging.InboundEmailresult();
+        
+        
+        list<user> users = [select id,Round_robin_id__c from user where (profile.UserLicense.name='salesforce' or profile.UserLicense.name= 'Salesforce Platform' ) ];
+        case cs = new case();      
+        case oldcs = [select round_robin_Id__c from case order by createdDate desc limit 1];
+        Integer oldId = Integer.valueOf(oldcs.Round_robin_Id__c);
+        integer newId = 0;
+        
+        If(oldId<users.size()){
+            newId = oldId+1;
+        }
+        
+        If(oldId==users.size()){
+            newId=1;
+        }
+        
+        
+        list <leave__c> leaveusers = [select user__r.id from leave__c  where To_date__c > today AND From_date__c <= today];
+        
+        list<id> leaveUserIds = new list<id> ();
+        
+        for(leave__c LU : leaveusers){
+            leaveUserIds.add(LU.user__r.id);
+        }
+        list<user> usersNotOnLeave = [select Id,Round_robin_id__c from user where Id not in :leaveUserIds and (profile.UserLicense.name='salesforce' or profile.UserLicense.name= 'Salesforce Platform' ) ];
+        
+        if( selectRRIdUser(newId,usersNotOnLeave,users)!=null){
+            cs.OwnerId = selectRRIdUser(newId,usersNotOnLeave,users); 
+            cs.Round_robin_Id__c = newId;    
+        }
+        else{
+            if(newId<users.size()){ 
+                integer i=newId;
+                
+                while(selectRRIdUser(i,usersNotOnLeave,users)==null && i<=users.size()){
+                    i++;
+                }
+                if(selectRRIdUser(i,usersNotOnLeave,users)!=null){
+                    cs.OwnerId = selectRRIdUser(i,usersNotOnLeave,users); 
+                    cs.Round_robin_Id__c = i;
+                }}
+            if( cs.OwnerId==null){
+                integer j = 1;
+                while(selectRRIdUser(j,usersNotOnLeave,users)==null && j<newId){
+                    j++;
+                }
+                if(selectRRIdUser(j,usersNotOnLeave,users)!=null){
+                    cs.OwnerId = selectRRIdUser(j,usersNotOnLeave,users); 
+                    cs.Round_robin_Id__c = j;
+                }     
+            } 
+        }
+
+        cs.Description = email.plainTextBody;
+        cs.Subject = email.subject;
+        cs.SuppliedEmail = email.fromAddress;
+        cs.Status = 'New';
+        cs.Origin = 'Email';
+        
+        
+        try{
+            
+            insert cs;   
+        }
+        catch(Exception e){
+            system.debug(e.getMessage());  
+        }
+
+        result.success = true;
+        return result;   
+    }
+    Id selectRRIdUser(integer rrId, list<user> usersAvailable, list<user> allUsers){
+        id selectedUser;
+        for(user u :usersAvailable){
+            
+            if(u.round_robin_id__c== rrId){
+                selectedUser = u.id;
+                break;
+            }}
+        return selectedUser;
+        
+    }
+}
